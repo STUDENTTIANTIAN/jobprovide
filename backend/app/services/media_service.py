@@ -11,7 +11,7 @@ class MediaService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_media(self, file_path: str, file_type: str, name: str = None, tags: List[str] = None) -> Media:
+    async def create_media(self, file_path: str, file_type: str, name: Optional[str] = None, tags: Optional[List[str]] = None) -> Media:
         """创建素材记录"""
         media = Media(
             type=file_type,
