@@ -250,3 +250,33 @@ class MatchingService:
 
         await self.db.flush()
         return results
+
+    async def match_task_segments(self, task_id: UUID) -> int:
+        """批量匹配任务的所有片段
+
+        Returns:
+            int: 匹配的片段数量
+        """
+        from app.models.subtitle_segment import SubtitleSegment
+
+        # 获取所有片段
+        result = await self.db.execute(
+            select(SubtitleSegment)
+            .where(SubtitleSegment.task_id == task_id)
+            .order_by(SubtitleSegment.sort_order)
+        )
+        segments = result.scalars().all()
+
+        # 为每个片段执行匹配
+        matched_count = 0
+        for segment in segments:
+            try:
+                matches = await self.match_segment(segment.id)
+                if matches:
+                    await self.save_match_results(segment.id, matches)
+                    matched_count += 1
+            except Exception as e:
+                print(f"Match failed for segment {segment.id}: {e}")
+                continue
+
+        return matched_count
