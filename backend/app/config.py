@@ -15,8 +15,23 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
 
     # 语音识别（可选）
+    # 提供商: iflytek / baidu / tencent / generic
+    SPEECH_PROVIDER: str = "generic"
     SPEECH_API_KEY: str = ""
     SPEECH_API_URL: str = ""
+
+    # 讯飞语音识别
+    IFLYTEK_APP_ID: str = ""
+    IFLYTEK_API_KEY: str = ""
+    IFLYTEK_API_SECRET: str = ""
+
+    # 百度语音识别
+    BAIDU_API_KEY: str = ""
+    BAIDU_API_SECRET: str = ""
+
+    # 腾讯云语音识别
+    TENCENT_SECRET_ID: str = ""
+    TENCENT_SECRET_KEY: str = ""
 
     # 匹配权重
     KEYWORD_WEIGHT: float = 0.4
