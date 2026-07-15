@@ -1,6 +1,3 @@
-"""混合匹配服务 - 关键词 + 语义(TEI + Qdrant)
-参考: E:\shangagent\data_agent 项目的向量检索方案
-"""
 from typing import List, Optional
 from uuid import UUID
 from sqlalchemy import select
@@ -19,38 +16,47 @@ class MatchingService:
         self.db = db
         self.embedding_service = EmbeddingService()
 
-    def keyword_match(self, segment_keywords: List[str], media_tags: List[str]) -> float:
-        """关键词匹配（Jaccard相似度）"""
-        if not segment_keywords or not media_tags:
+    def keyword_match(self, segment_keywords: List[str], media_tags: List[str], media_name: str = "") -> float:
+        if not segment_keywords:
             return 0.0
-        intersection = set(segment_keywords) & set(media_tags)
-        union = set(segment_keywords) | set(media_tags)
-        return len(intersection) / len(union) if union else 0.0
+
+        media_text = media_name.lower() if media_name else ""
+        media_tags_lower = [t.lower() for t in (media_tags or [])]
+        seg_keywords_lower = [k.lower() for k in segment_keywords]
+
+        total_score = 0.0
+        for seg_kw in seg_keywords_lower:
+            for media_tag in media_tags_lower:
+                if seg_kw == media_tag:
+                    total_score += 1.0
+                elif seg_kw in media_tag or media_tag in seg_kw:
+                    total_score += 0.5
+            if media_text and seg_kw in media_text:
+                total_score += 0.8
+
+        max_possible = len(seg_keywords_lower) * 1.5
+        return min(total_score / max_possible, 1.0) if max_possible > 0 else 0.0
 
     async def semantic_match(self, segment_embedding: List[float], media_embedding: List[float]) -> float:
-        """语义匹配（余弦相似度）"""
         if not segment_embedding or not media_embedding:
             return 0.0
         return self.embedding_service.cosine_similarity(segment_embedding, media_embedding)
 
     def generate_reason(self, matched_keywords: List[str], semantic_score: float) -> str:
-        """生成匹配理由"""
         reasons = []
         if matched_keywords:
-            reasons.append(f"关键词匹配: {', '.join(matched_keywords)}")
+            reasons.append(f"关键词匹配: {', '.join(matched_keywords[:3])}")
         if semantic_score > 0.8:
             reasons.append("语义高度相关")
         elif semantic_score > 0.6:
             reasons.append("语义相关")
-        return " | ".join(reasons) if reasons else "无匹配"
+        elif semantic_score > 0.3:
+            reasons.append("部分语义相关")
+        return " | ".join(reasons) if reasons else "推荐素材"
 
     async def match_segment(self, segment_id: UUID) -> List[dict]:
-        """为单个字幕片段匹配素材
-        使用Qdrant进行向量检索，提高匹配效率
-        """
         from app.models.subtitle_segment import SubtitleSegment
 
-        # 获取字幕片段
         result = await self.db.execute(
             select(SubtitleSegment).where(SubtitleSegment.id == segment_id)
         )
@@ -58,35 +64,29 @@ class MatchingService:
         if not segment:
             return []
 
-        # 方案A: 使用Qdrant向量检索（推荐）
         if qdrant_service.client and segment.embedding:
             return await self._match_with_qdrant(segment)
 
-        # 方案B: 降级到本地计算
         return await self._match_local(segment)
 
     async def _match_with_qdrant(self, segment) -> List[dict]:
-        """使用Qdrant进行向量检索"""
         from app.models.subtitle_segment import SubtitleSegment
 
-        # 1. 从Qdrant搜索相似素材（向量检索）
         similar_media = await qdrant_service.search_similar_media(
             query_embedding=segment.embedding,
-            score_threshold=0.5,  # 降低阈值以获取更多候选
+            score_threshold=0.5,
             limit=10
         )
 
         if not similar_media:
             return []
 
-        # 2. 获取匹配的素材详细信息
         media_ids = [item["media_id"] for item in similar_media]
         media_result = await self.db.execute(
             select(Media).where(Media.id.in_(media_ids))
         )
         media_map = {str(m.id): m for m in media_result.scalars().all()}
 
-        # 3. 计算混合分数
         matches = []
         for item in similar_media:
             media_id = item["media_id"]
@@ -94,22 +94,19 @@ class MatchingService:
             if not media:
                 continue
 
-            # 关键词匹配
             kw_score = self.keyword_match(
                 segment.keywords or [],
-                media.tags or []
+                media.tags or [],
+                media.name or ""
             )
 
-            # 语义匹配分数（来自Qdrant的余弦相似度）
             sem_score = item["score"]
 
-            # 混合分数
             total_score = (
                 settings.KEYWORD_WEIGHT * kw_score +
                 settings.SEMANTIC_WEIGHT * sem_score
             )
 
-            # 匹配关键词
             matched_kw = list(set(segment.keywords or []) & set(media.tags or []))
 
             matches.append({
@@ -120,29 +117,24 @@ class MatchingService:
                 "reason": self.generate_reason(matched_kw, sem_score)
             })
 
-        # 排序并返回Top3
         matches.sort(key=lambda x: x["score"], reverse=True)
         return matches[:3]
 
     async def _match_local(self, segment) -> List[dict]:
-        """本地计算匹配（降级方案）"""
-        # 获取所有素材
         media_result = await self.db.execute(select(Media))
         all_media = media_result.scalars().all()
 
         if not all_media:
             return []
 
-        # 计算匹配分数
         matches = []
         for media in all_media:
-            # 关键词匹配
             kw_score = self.keyword_match(
                 segment.keywords or [],
-                media.tags or []
+                media.tags or [],
+                media.name or ""
             )
 
-            # 语义匹配
             sem_score = 0.0
             if segment.embedding and media.embedding:
                 sem_score = await self.semantic_match(
@@ -150,13 +142,11 @@ class MatchingService:
                     media.embedding
                 )
 
-            # 混合分数
             total_score = (
                 settings.KEYWORD_WEIGHT * kw_score +
                 settings.SEMANTIC_WEIGHT * sem_score
             )
 
-            # 匹配关键词
             matched_kw = list(set(segment.keywords or []) & set(media.tags or []))
 
             matches.append({
@@ -167,12 +157,17 @@ class MatchingService:
                 "reason": self.generate_reason(matched_kw, sem_score)
             })
 
-        # 排序并返回Top3
-        matches.sort(key=lambda x: x["score"], reverse=True)
-        return matches[:3]
+        has_matches = any(m["score"] > 0 for m in matches)
+        if has_matches:
+            matches.sort(key=lambda x: x["score"], reverse=True)
+            return matches[:3]
+        else:
+            import random
+            shuffled = list(matches)
+            random.shuffle(shuffled)
+            return shuffled[:3]
 
     async def index_segment_to_qdrant(self, segment_id: UUID):
-        """将字幕片段索引到Qdrant"""
         from app.models.subtitle_segment import SubtitleSegment
 
         result = await self.db.execute(
@@ -182,12 +177,10 @@ class MatchingService:
         if not segment:
             return
 
-        # 生成embedding
         embedding = await self.embedding_service.get_embedding(segment.content)
         if not embedding:
             return
 
-        # 存储到Qdrant
         await qdrant_service.upsert_segment(
             segment_id=str(segment_id),
             embedding=embedding,
@@ -199,7 +192,6 @@ class MatchingService:
         )
 
     async def index_media_to_qdrant(self, media_id: UUID):
-        """将素材索引到Qdrant"""
         result = await self.db.execute(
             select(Media).where(Media.id == media_id)
         )
@@ -207,7 +199,6 @@ class MatchingService:
         if not media:
             return
 
-        # 拼接文本用于embedding: name + tags
         text_parts = []
         if media.name:
             text_parts.append(media.name)
@@ -215,12 +206,10 @@ class MatchingService:
             text_parts.extend(media.tags)
         text = " ".join(text_parts) if text_parts else media.url
 
-        # 生成embedding
         embedding = await self.embedding_service.get_embedding(text)
         if not embedding:
             return
 
-        # 存储到Qdrant
         await qdrant_service.upsert_media(
             media_id=str(media_id),
             embedding=embedding,
@@ -232,7 +221,6 @@ class MatchingService:
         )
 
     async def save_match_results(self, segment_id: UUID, matches: List[dict]) -> List[MatchResult]:
-        """保存匹配结果"""
         results = []
         for i, match in enumerate(matches):
             result = MatchResult(
@@ -252,14 +240,8 @@ class MatchingService:
         return results
 
     async def match_task_segments(self, task_id: UUID) -> int:
-        """批量匹配任务的所有片段
-
-        Returns:
-            int: 匹配的片段数量
-        """
         from app.models.subtitle_segment import SubtitleSegment
 
-        # 获取所有片段
         result = await self.db.execute(
             select(SubtitleSegment)
             .where(SubtitleSegment.task_id == task_id)
@@ -267,7 +249,6 @@ class MatchingService:
         )
         segments = result.scalars().all()
 
-        # 为每个片段执行匹配
         matched_count = 0
         for segment in segments:
             try:
@@ -276,7 +257,7 @@ class MatchingService:
                     await self.save_match_results(segment.id, matches)
                     matched_count += 1
             except Exception as e:
-                print(f"Match failed for segment {segment.id}: {e}")
+                print(f"Match failed: {segment.id}: {e}")
                 continue
 
         return matched_count

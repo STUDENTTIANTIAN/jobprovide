@@ -8,10 +8,6 @@ settings = get_settings()
 
 
 class TextEmbeddingsInferenceEmbeddings:
-    """HuggingFace Text Embeddings Inference 客户端
-    参考: E:\shangagent\data_agent\app\clients\embedding_client_manager.py
-    """
-
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
 
@@ -39,9 +35,7 @@ class TextEmbeddingsInferenceEmbeddings:
             return [item["embedding"] for item in data["data"]]
         raise ValueError(f"Unexpected embedding response: {data}")
 
-    def _post_with_retry(
-        self, client: httpx.Client, texts: list[str], attempts: int = 3
-    ) -> httpx.Response:
+    def _post_with_retry(self, client: httpx.Client, texts: list[str], attempts: int = 3) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(attempts):
             try:
@@ -55,15 +49,11 @@ class TextEmbeddingsInferenceEmbeddings:
                 asyncio.sleep(0.5 * (attempt + 1))
         raise RuntimeError("Embedding request failed") from last_error
 
-    async def _apost_with_retry(
-        self, client: httpx.AsyncClient, texts: list[str], attempts: int = 3
-    ) -> httpx.Response:
+    async def _apost_with_retry(self, client: httpx.AsyncClient, texts: list[str], attempts: int = 3) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(attempts):
             try:
-                response = await client.post(
-                    f"{self.base_url}/embed", json={"inputs": texts}
-                )
+                response = await client.post(f"{self.base_url}/embed", json={"inputs": texts})
                 response.raise_for_status()
                 return response
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
@@ -81,22 +71,17 @@ class TextEmbeddingsInferenceEmbeddings:
 
 
 class EmbeddingService:
-    """Embedding服务 - 封装TEI客户端"""
-
     def __init__(self):
-        self.tei_url = settings.TEI_URL  # http://localhost:8081
+        self.tei_url = settings.TEI_URL
         self.client: Optional[TextEmbeddingsInferenceEmbeddings] = None
         self._init_client()
 
     def _init_client(self):
-        """初始化TEI客户端"""
         if self.tei_url:
             self.client = TextEmbeddingsInferenceEmbeddings(self.tei_url)
 
     async def get_embedding(self, text: str) -> Optional[List[float]]:
-        """获取文本的embedding向量"""
         if not self.client:
-            # 降级：返回伪向量（用于演示）
             return self._dummy_embedding(text)
 
         try:
@@ -106,7 +91,6 @@ class EmbeddingService:
             return self._dummy_embedding(text)
 
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """批量获取embedding向量"""
         if not self.client:
             return [self._dummy_embedding(text) for text in texts]
 
@@ -117,12 +101,10 @@ class EmbeddingService:
             return [self._dummy_embedding(text) for text in texts]
 
     def _dummy_embedding(self, text: str) -> List[float]:
-        """生成伪embedding（基于文本哈希，用于无TEI时的降级）"""
         np.random.seed(hash(text) % 2**32)
-        return np.random.rand(1024).tolist()  # bge-large-zh-v1.5 是1024维
+        return np.random.rand(1024).tolist()
 
     def cosine_similarity(self, a: List[float], b: List[float]) -> float:
-        """计算余弦相似度"""
         a = np.array(a)
         b = np.array(b)
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
