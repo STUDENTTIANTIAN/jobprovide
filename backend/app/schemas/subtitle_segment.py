@@ -12,6 +12,7 @@ class SubtitleSegmentResponse(BaseModel):
     keywords: Optional[List[str]]
     sort_order: int
     selected_media_id: Optional[UUID]
+    matches: Optional[List[dict]] = None  # 匹配结果列表
     created_at: datetime
 
     class Config:
