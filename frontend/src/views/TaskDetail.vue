@@ -3,7 +3,7 @@
     <div class="task-header">
       <h2>任务详情</h2>
       <el-tag :type="getStatusType(task?.status)">
-        {{ task?.status }}
+        {{ getStatusName(task?.status) }}
       </el-tag>
     </div>
 
@@ -32,7 +32,7 @@
         v-for="segment in segments"
         :key="segment.id"
         :segment="segment"
-        @update="loadSegments"
+        @select-media="handleSelectMedia"
       />
     </div>
   </div>
@@ -43,14 +43,45 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '../api'
-import type { Task, SubtitleSegment } from '../types'
 import SubtitleSegmentComponent from '../components/SubtitleSegment.vue'
+
+interface MatchResult {
+  id: string
+  media_id: string
+  score: number
+  keyword_score: number
+  semantic_score: number
+  reason: string
+  rank: number
+  media_name?: string
+  media_url?: string
+  media_type?: string
+}
+
+interface Segment {
+  id: string
+  task_id: string
+  content: string
+  keywords?: string[]
+  sort_order: number
+  selected_media_id?: string
+  matches?: MatchResult[]
+}
+
+interface TaskDetail {
+  task_id: string
+  type: string
+  status: string
+  input_text?: string
+  error_message?: string
+  segments?: Segment[]
+}
 
 const route = useRoute()
 const taskId = route.params.id as string
 
-const task = ref<Task | null>(null)
-const segments = ref<SubtitleSegment[]>([])
+const task = ref<TaskDetail | null>(null)
+const segments = ref<Segment[]>([])
 const loading = ref(true)
 let pollTimer: number | null = null
 
@@ -64,34 +95,30 @@ const getStatusType = (status?: string) => {
   return map[status || ''] || 'info'
 }
 
+const getStatusName = (status?: string) => {
+  const map: Record<string, string> = {
+    pending: '等待中',
+    processing: '处理中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return map[status || ''] || status || ''
+}
+
 const loadTask = async () => {
   try {
     const { data } = await taskApi.getStatus(taskId)
-    task.value = {
-      ...data,
-      id: data.task_id
-    } as unknown as Task
+    task.value = data
+    segments.value = data.segments || []
   } catch (error) {
     ElMessage.error('加载任务失败')
-  }
-}
-
-const loadSegments = async () => {
-  try {
-    const { data } = await taskApi.getSegments(taskId)
-    segments.value = data
-  } catch (error) {
-    ElMessage.error('加载字幕片段失败')
   }
 }
 
 const startPolling = () => {
   pollTimer = window.setInterval(async () => {
     await loadTask()
-    if (task.value?.status === 'completed') {
-      await loadSegments()
-      stopPolling()
-    } else if (task.value?.status === 'failed') {
+    if (task.value?.status === 'completed' || task.value?.status === 'failed') {
       stopPolling()
     }
   }, 2000)
@@ -104,13 +131,32 @@ const stopPolling = () => {
   }
 }
 
+const handleSelectMedia = async (segmentId: string, mediaId: string) => {
+  try {
+    await taskApi.updateSegment(taskId, segmentId, {
+      selected_media_id: mediaId
+    })
+    ElMessage.success('已选择素材')
+    // 更新本地状态
+    const segment = segments.value.find(s => s.id === segmentId)
+    if (segment) {
+      segment.selected_media_id = mediaId
+    }
+  } catch (error) {
+    ElMessage.error('选择失败')
+  }
+}
+
 const retryTask = async () => {
   try {
     await taskApi.retry(taskId)
     ElMessage.success('任务已重新提交')
     loading.value = true
     await loadTask()
-    startPolling()
+    if (task.value?.status === 'processing') {
+      startPolling()
+    }
+    loading.value = false
   } catch (error) {
     ElMessage.error('重试失败')
   }
@@ -118,9 +164,7 @@ const retryTask = async () => {
 
 onMounted(async () => {
   await loadTask()
-  if (task.value?.status === 'completed') {
-    await loadSegments()
-  } else if (task.value?.status === 'processing') {
+  if (task.value?.status === 'processing') {
     startPolling()
   }
   loading.value = false
@@ -146,5 +190,11 @@ onUnmounted(() => {
 .loading, .processing, .failed {
   text-align: center;
   padding: 50px;
+}
+
+.segments {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 </style>
