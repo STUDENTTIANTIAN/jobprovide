@@ -48,7 +48,7 @@ services:
       - "8081:80"
     volumes:
       - tei_data:/data
-    command: --model-id BAAI/bge-large-zh-v1.8
+    command: --model-id BAAI/bge-large-zh-v1.5
     environment:
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
 
