@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Task, SubtitleSegment, Media } from '../types'
+import type { Task, Media } from '../types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -17,16 +17,61 @@ export const taskApi = {
   },
 
   getStatus(taskId: string) {
-    return api.get<{ task_id: string; status: string; segments_count?: number }>(
-      `/tasks/${taskId}`
-    )
+    return api.get<{
+      task_id: string
+      type: string
+      status: string
+      input_text?: string
+      error_message?: string
+      created_at?: string
+      updated_at?: string
+      segments?: Array<{
+        id: string
+        task_id: string
+        content: string
+        keywords?: string[]
+        sort_order: number
+        selected_media_id?: string
+        matches?: Array<{
+          id: string
+          media_id: string
+          score: number
+          keyword_score: number
+          semantic_score: number
+          reason: string
+          rank: number
+          media_name?: string
+          media_url?: string
+          media_type?: string
+        }>
+      }>
+    }>(`/tasks/${taskId}`)
   },
 
   getSegments(taskId: string) {
-    return api.get<SubtitleSegment[]>(`/tasks/${taskId}/segments`)
+    return api.get<Array<{
+      id: string
+      task_id: string
+      content: string
+      keywords?: string[]
+      sort_order: number
+      selected_media_id?: string
+      matches?: Array<{
+        id: string
+        media_id: string
+        score: number
+        keyword_score: number
+        semantic_score: number
+        reason: string
+        rank: number
+        media_name?: string
+        media_url?: string
+        media_type?: string
+      }>
+    }>>(`/tasks/${taskId}/segments`)
   },
 
-  updateSegment(taskId: string, segmentId: string, data: Partial<SubtitleSegment>) {
+  updateSegment(taskId: string, segmentId: string, data: { content?: string; sort_order?: number; selected_media_id?: string }) {
     return api.put(`/tasks/${taskId}/segments/${segmentId}`, data)
   },
 

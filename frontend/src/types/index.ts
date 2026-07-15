@@ -35,11 +35,13 @@ export interface Media {
 
 export interface MatchResult {
   id: string
-  segment_id: string
   media_id: string
   score?: number
   keyword_score?: number
   semantic_score?: number
   reason?: string
   rank?: number
+  media_name?: string
+  media_url?: string
+  media_type?: string
 }
