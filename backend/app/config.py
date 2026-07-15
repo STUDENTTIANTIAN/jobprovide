@@ -15,10 +15,15 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
 
     # 语音识别（可选）
-    # 提供商: iflytek / baidu / tencent / generic
-    SPEECH_PROVIDER: str = "generic"
+    # 提供商: mimo / iflytek / baidu / tencent / generic
+    SPEECH_PROVIDER: str = "mimo"
     SPEECH_API_KEY: str = ""
     SPEECH_API_URL: str = ""
+
+    # 小米MiMo语音识别
+    MIMO_API_KEY: str = ""
+    MIMO_API_URL: str = "https://api.mimo.xiaomi.com/v1/audio/transcriptions"
+    MIMO_MODEL: str = "mimo-v2.5-asr"
 
     # 讯飞语音识别
     IFLYTEK_APP_ID: str = ""

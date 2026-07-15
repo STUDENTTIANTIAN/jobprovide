@@ -23,12 +23,14 @@ class TranscriptionService:
 
     async def transcribe(self, file_path: str) -> Optional[str]:
         """语音识别 - 根据配置的提供商调用相应API"""
-        if not self.api_key or not self.api_url:
+        if not self.api_key and not settings.MIMO_API_KEY:
             # 降级：返回示例文本
             return "这是语音识别的示例文本。请配置真实的语音识别API。\n\n配置方法请查看 DEPLOYMENT.md"
 
         try:
-            if self.speech_provider == "iflytek":
+            if self.speech_provider == "mimo":
+                return await self._transcribe_mimo(file_path)
+            elif self.speech_provider == "iflytek":
                 return await self._transcribe_iflytek(file_path)
             elif self.speech_provider == "baidu":
                 return await self._transcribe_baidu(file_path)
@@ -52,6 +54,53 @@ class TranscriptionService:
                 response.raise_for_status()
                 data = response.json()
                 return data.get("text", "")
+
+    async def _transcribe_mimo(self, file_path: str) -> Optional[str]:
+        """小米MiMo语音识别 (mimo-v2.5-asr)
+        文档: https://developers.xiaoai.mi.com/mimo-api
+        """
+        api_key = settings.MIMO_API_KEY or self.api_key
+        api_url = settings.MIMO_API_URL or self.api_url
+
+        if not api_key:
+            print("MiMo API key not configured")
+            return None
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            with open(file_path, "rb") as f:
+                # 读取文件内容
+                file_content = f.read()
+
+            # 获取文件名
+            import os
+            file_name = os.path.basename(file_path)
+
+            # 调用MiMo ASR API
+            response = await client.post(
+                api_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                },
+                files={
+                    "file": (file_name, file_content, "audio/wav")
+                },
+                data={
+                    "model": settings.MIMO_MODEL,
+                    "language": "zh"
+                }
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+            # MiMo API返回格式可能类似OpenAI Whisper
+            if "text" in data:
+                return data["text"]
+            elif "result" in data:
+                return data["result"]
+            else:
+                print(f"MiMo API response: {data}")
+                return data.get("transcript", "")
 
     async def _transcribe_iflytek(self, file_path: str) -> Optional[str]:
         """讯飞语音识别
