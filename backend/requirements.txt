@@ -12,3 +12,5 @@ numpy==1.26.2
 httpx==0.25.2
 pytest==7.4.3
 pytest-asyncio==0.23.2
+# Vector DB - 参考 E:\shangagent\data_agent 项目
+qdrant-client==1.12.1
