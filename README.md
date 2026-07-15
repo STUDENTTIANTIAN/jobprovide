@@ -181,10 +181,6 @@ QDRANT_URL=http://localhost:6333
 - [ ] 视频预览功能
 - [ ] 更多语音识别服务支持
 
-## 参考项目
-
-- Embedding方案参考: `E:\shangagent\data_agent`
-- 模型: BAAI/bge-large-zh-v1.5
 
 ## License
 
