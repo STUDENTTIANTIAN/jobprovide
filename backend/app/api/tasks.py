@@ -12,6 +12,23 @@ from app.services.subtitle_service import SubtitleService
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
+
+@router.get("", response_model=list[TaskResponse])
+async def list_tasks(
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取任务列表"""
+    result = await db.execute(
+        select(Task)
+        .order_by(Task.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    tasks = result.scalars().all()
+    return tasks
+
 @router.post("", response_model=TaskResponse)
 async def create_task(
     task_data: TaskCreate,

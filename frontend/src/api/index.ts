@@ -8,6 +8,10 @@ const api = axios.create({
 
 // Task APIs
 export const taskApi = {
+  list(params?: { skip?: number; limit?: number }) {
+    return api.get<Task[]>('/tasks', { params })
+  },
+
   create(data: { type: string; content?: string }) {
     return api.post<Task>('/tasks', data)
   },
